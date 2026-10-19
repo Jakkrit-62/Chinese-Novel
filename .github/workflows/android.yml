@@ -1,0 +1,86 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # publish the APK as a GitHub Release asset
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Build web app
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npm run build
+
+      - name: Copy web assets into the Android project
+        run: npx cap sync android
+
+      - name: Assemble APK
+        working-directory: app/android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ../HanziReader.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HanziReader-apk
+          path: HanziReader.apk
+
+      - name: Publish to the "latest-apk" release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest-apk --cleanup-tag --yes || true
+          gh release create latest-apk HanziReader.apk \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Hanzi Reader APK (build ${{ github.run_number }})" \
+            --notes "Built from ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. Install on Android: download HanziReader.apk, allow installs from unknown sources."

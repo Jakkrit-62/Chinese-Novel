@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #faf8f3;
+  --fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121214;
+    --fg: #f4f4f5;
+  }
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.font-zh {
+  font-family: "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+}
+
+ruby {
+  ruby-position: over;
+  ruby-align: center;
+}
+rt {
+  line-height: 1;
+}
