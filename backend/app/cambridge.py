@@ -156,30 +156,35 @@ def back_match(word: str, translation: str) -> float:
     return sum(c in translation for c in chars) / len(chars) / 2 if chars else 0.0
 
 
-def synonym_via(translation: str, headword: str, cedict: dict) -> str | None:
-    """A Chinese word in Cambridge's translation whose own CC-CEDICT glosses contain `headword`
-    (understand -> 理解 'to comprehend; to understand'), i.e. Cambridge means the same thing
-    even though it chose a different Chinese word than ours."""
+def synonym_evidence(translation: str, meaning: set[str], cedict: dict) -> tuple[str | None, int]:
+    """How strongly Cambridge's Chinese translation (in other words than ours) means the same thing.
+
+    `meaning` = English headwords of the original word's in-context CC-CEDICT glosses. We count the
+    headwords shared with the CC-CEDICT glosses of Cambridge's Chinese alternatives (whole phrases,
+    so "find out" counts once): understand -> 理解;明白;懂得 shares {understand, realize} with 了解,
+    realize(ACHIEVE) -> 实现 only {realize}."""
+    via, shared = None, set()
     for alt in re.split(r"[；;，,、\s]+", re.sub(r"[（(].*?[)）]", "", translation)):
-        if alt and any(headword in english_headwords(g) for e in cedict.get(alt, []) for g in e[1]):
-            return alt
-    return None
+        hits = {h for e in cedict.get(alt, []) for g in e[1] for h in english_headwords(g)} & meaning
+        if hits and via is None:
+            via = alt
+        shared |= hits
+    return via, len(shared)
 
 
-def score_senses(word: str, headword: str, senses: list[dict], cedict: dict) -> list[dict]:
-    """Senses that map back to `word`, best first. Exact back-translations win; only if there are
-    none do we accept senses translated by a synonym (prevents bank/岸 for 银行)."""
+def score_senses(word: str, senses: list[dict], meaning: set[str], cedict: dict) -> list[dict]:
+    """Senses that map back to `word`, best first.
+
+    Exact back-translations win. Only if there are none do we fall back to senses translated by
+    synonyms, and then only those with the strongest shared-meaning evidence on this page
+    (prevents bank/岸 for 银行 and realize/实现 for 了解)."""
     scored = [{**s, "match": back_match(word, s["translation"]), "via": None} for s in senses]
     if any(s["match"] >= 0.9 for s in scored):
-        keep = [s for s in scored if s["match"] >= 0.5]
-    else:
-        keep = []
-        for s in scored:
-            via = synonym_via(s["translation"], headword, cedict) if s["match"] < 0.5 else None
-            if via:
-                keep.append({**s, "match": 0.6, "via": via})
-            elif s["match"] >= 0.5:
-                keep.append(s)
+        return sorted((s for s in scored if s["match"] >= 0.5), key=lambda s: -s["match"])
+    keep = [s for s in scored if s["match"] >= 0.5]
+    evidence = [(s, *synonym_evidence(s["translation"], meaning, cedict)) for s in scored if s["match"] < 0.5]
+    strongest = max((n for _, via, n in evidence if via), default=0)
+    keep += [{**s, "match": 0.6 if n >= 2 else 0.55, "via": via} for s, via, n in evidence if via and n == strongest]
     return sorted(keep, key=lambda s: -s["match"])
 
 
@@ -192,8 +197,9 @@ async def _fetch_parsed(url: str) -> list[dict] | None:
             await _throttle()
             resp = await _get_client().get(url, headers=_headers())
             if resp.status_code in (200, 404):
-                ok = resp.status_code == 200 and "entry-body" in resp.text  # unknown words land on a spellcheck page
-                parsed = parse_senses(resp.text) if ok else None
+                # Unknown words land on a spellcheck page with no definitions. (Idiom pages have no
+                # "entry-body" wrapper, so "found" is decided by whether any sense parsed.)
+                parsed = (parse_senses(resp.text) or None) if resp.status_code == 200 else None
                 _cache.set(url, parsed)
                 return parsed
             if resp.status_code in (403, 429) or resp.status_code >= 500:
@@ -204,12 +210,12 @@ async def _fetch_parsed(url: str) -> list[dict] | None:
     raise httpx.HTTPError(f"Cambridge kept refusing {url}")
 
 
-async def map_to_cambridge(word: str, headword: str, cedict: dict) -> dict:
+async def map_to_cambridge(word: str, headword: str, meaning: set[str], cedict: dict) -> dict:
     url = BASE + EN_ZH + slug(headword)
     senses = await _fetch_parsed(url)
     if senses is None:
         return {"query": headword, "url": url, "found": False, "matched": [], "unmatchedCount": 0}
-    matched = score_senses(word, headword, senses, cedict)
+    matched = score_senses(word, senses, meaning, cedict)
     return {"query": headword, "url": url, "found": True, "matched": matched, "unmatchedCount": len(senses) - len(matched)}
 
 

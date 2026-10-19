@@ -8,7 +8,7 @@ import sys
 from . import cambridge
 from .lookup import lookup_word
 
-DIAGNOSE = ["https://dictionary.cambridge.org/dictionary/english/kill-two-birds-with-one-stone"]
+DIAGNOSE: list[str] = []  # add URLs here to dump raw HTML diagnostics into the CI log
 
 CASES = [("银行", ["yín", "háng"], None), ("了解", ["liǎo", "jiě"], None), ("一石二鸟", ["yī", "shí", "èr", "niǎo"], None)]
 

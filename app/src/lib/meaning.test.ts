@@ -54,11 +54,15 @@ test("a phrase split across tokens is found from any of its tokens", () => {
 
 const sense = (definition: string, translation: string) => ({ guideword: "", pos: "verb", definition, translation, examples: [] });
 
-test("synonym back-match is used only when no sense translates back exactly", () => {
-  const understand = [sense("to know the meaning of something", "理解，懂，明白"), sense("to have heard", "获悉，听说")];
-  const kept = scoreSenses("了解", "understand", understand, cedict);
+test("synonym back-match needs meaning shared with the original word", () => {
+  const meaning = new Set(["understand", "realize", "find out"]); // 了解's glosses as English headwords
+  const understand = [sense("to know the meaning of something", "理解，明白，懂得"), sense("to have heard", "获悉，听说")];
+  const kept = scoreSenses("了解", understand, meaning, cedict);
   assert.deepEqual(kept.map((s) => s.definition), ["to know the meaning of something"]);
-  assert.ok(["理解", "懂", "明白"].includes(kept[0].via!));
+  assert.ok(["理解", "明白", "懂得"].includes(kept[0].via!));
+  assert.equal(scoreSenses("了解", [sense("to get information", "找出，查明；得知")], meaning, cedict)[0].match, 0.55);
+  const realize = [sense("to understand a situation", "明白；认识到；意识到"), sense("to achieve something", "实现")];
+  assert.deepEqual(scoreSenses("了解", realize, meaning, cedict).map((s) => s.definition), ["to understand a situation"]);
   const bank = [sense("an organization for money", "银行"), sense("land beside a river", "岸，堤")];
-  assert.deepEqual(scoreSenses("银行", "bank", bank, cedict).map((s) => s.translation), ["银行"]);
+  assert.deepEqual(scoreSenses("银行", bank, new Set(["bank"]), cedict).map((s) => s.translation), ["银行"]);
 });

@@ -30,15 +30,17 @@ export async function withCambridge(info: WordInfo): Promise<WordInfo> {
   }
   // English headwords from the top-ranked senses only, deduplicated.
   const best = info.senses[0]?.score ?? 0;
+  const top = info.senses.filter((s) => s.score >= best - TOP_TIER);
+  const meaning = new Set(top.flatMap((s) => englishHeadwords(s.gloss)));
   const queries: { headword: string; gloss: string }[] = [];
-  for (const sense of info.senses.filter((s) => s.score >= best - TOP_TIER)) {
+  for (const sense of top) {
     for (const headword of englishHeadwords(sense.gloss)) {
       if (!queries.some((q) => q.headword === headword)) queries.push({ headword, gloss: sense.gloss });
     }
   }
   const cambridge = [];
   for (const q of queries.slice(0, MAX_QUERIES)) {
-    cambridge.push({ ...(await mapToCambridge(info.word, q.headword, cedict)), gloss: q.gloss });
+    cambridge.push({ ...(await mapToCambridge(info.word, q.headword, meaning, cedict)), gloss: q.gloss });
   }
   // Most useful first: mappings with back-matched senses, by best match.
   cambridge.sort((a, b) => (b.matched[0]?.match ?? -1) - (a.matched[0]?.match ?? -1));

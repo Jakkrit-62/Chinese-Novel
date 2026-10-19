@@ -53,38 +53,41 @@ export function backMatch(word: string, translation: string): number {
 }
 
 /**
- * A Chinese word in Cambridge's translation whose own CC-CEDICT glosses contain `headword`
- * (understand -> 理解 "to comprehend; to understand"): Cambridge means the same thing even
- * though it chose a different Chinese word than ours.
+ * How strongly Cambridge's Chinese translation (in other words than ours) means the same thing.
+ * `meaning` = English headwords of the original word's in-context CC-CEDICT glosses; we count the
+ * headwords shared with the CC-CEDICT glosses of Cambridge's Chinese alternatives (whole phrases,
+ * so "find out" counts once): understand -> 理解;明白;懂得 shares {understand, realize} with 了解,
+ * realize (ACHIEVE) -> 实现 only {realize}.
  */
-export function synonymVia(translation: string, headword: string, cedict: Cedict): string | null {
+export function synonymEvidence(translation: string, meaning: Set<string>, cedict: Cedict): { via: string | null; shared: number } {
+  let via: string | null = null;
+  const shared = new Set<string>();
   for (const alt of translation.replace(/[（(].*?[)）]/g, "").split(/[；;，,、\s]+/)) {
-    if (alt && (cedict[alt] ?? []).some((e) => e[1].some((g) => englishHeadwords(g).includes(headword)))) return alt;
+    const hits = (cedict[alt] ?? []).flatMap((e) => e[1].flatMap(englishHeadwords)).filter((h) => meaning.has(h));
+    if (hits.length && via === null) via = alt;
+    hits.forEach((h) => shared.add(h));
   }
-  return null;
+  return { via, shared: shared.size };
 }
 
 /**
- * Senses that map back to `word`, best first. Exact back-translations win; only if there are
- * none do we accept senses translated by a synonym (prevents bank/岸 for 银行).
+ * Senses that map back to `word`, best first. Exact back-translations win. Only if there are none
+ * do we fall back to senses translated by synonyms, and then only those with the strongest
+ * shared-meaning evidence on this page (prevents bank/岸 for 银行 and realize/实现 for 了解).
  */
 export function scoreSenses(
   word: string,
-  headword: string,
   senses: Omit<CambridgeSense, "match" | "via">[],
+  meaning: Set<string>,
   cedict: Cedict,
 ): CambridgeSense[] {
   const scored = senses.map((s) => ({ ...s, match: backMatch(word, s.translation), via: null as string | null }));
-  let keep: CambridgeSense[];
-  if (scored.some((s) => s.match >= 0.9)) {
-    keep = scored.filter((s) => s.match >= 0.5);
-  } else {
-    keep = [];
-    for (const s of scored) {
-      const via = s.match < 0.5 ? synonymVia(s.translation, headword, cedict) : null;
-      if (via) keep.push({ ...s, match: 0.6, via });
-      else if (s.match >= 0.5) keep.push(s);
-    }
+  if (scored.some((s) => s.match >= 0.9)) return scored.filter((s) => s.match >= 0.5).sort((a, b) => b.match - a.match);
+  const keep: CambridgeSense[] = scored.filter((s) => s.match >= 0.5);
+  const evidence = scored.filter((s) => s.match < 0.5).map((s) => ({ s, ...synonymEvidence(s.translation, meaning, cedict) }));
+  const strongest = Math.max(0, ...evidence.filter((e) => e.via).map((e) => e.shared));
+  for (const { s, via, shared } of evidence) {
+    if (via && shared === strongest) keep.push({ ...s, match: shared >= 2 ? 0.6 : 0.55, via });
   }
   return keep.sort((a, b) => b.match - a.match);
 }
@@ -152,8 +155,10 @@ async function fetchParsed(url: string): Promise<Parsed | null> {
     await throttle();
     const res = await httpRequest(url, { headers: HEADERS });
     if (res.status === 200 || res.status === 404) {
-      // Unknown words redirect to a spellcheck page with no entry body.
-      const parsed = res.status === 200 && res.data.includes("entry-body") ? parseSenses(res.data) : null;
+      // Unknown words land on a spellcheck page with no definitions. (Idiom pages have no
+      // "entry-body" wrapper, so "found" is decided by whether any sense parsed.)
+      const senses = res.status === 200 ? parseSenses(res.data) : null;
+      const parsed = senses?.senses.length ? senses : null;
       writeCache(url, parsed);
       return parsed;
     }
@@ -166,11 +171,16 @@ async function fetchParsed(url: string): Promise<Parsed | null> {
   throw new Error("Cambridge is rate-limiting requests");
 }
 
-export async function mapToCambridge(word: string, headword: string, cedict: Cedict): Promise<CambridgeMapping> {
+export async function mapToCambridge(
+  word: string,
+  headword: string,
+  meaning: Set<string>,
+  cedict: Cedict,
+): Promise<CambridgeMapping> {
   const url = BASE + EN_ZH + slug(headword);
   const parsed = await fetchParsed(url);
   if (!parsed) return { query: headword, url, found: false, matched: [], unmatchedCount: 0 };
-  const matched = scoreSenses(word, headword, parsed.senses, cedict);
+  const matched = scoreSenses(word, parsed.senses, meaning, cedict);
   return { query: headword, url, found: true, matched, unmatchedCount: parsed.senses.length - matched.length };
 }
 

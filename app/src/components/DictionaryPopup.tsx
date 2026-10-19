@@ -229,7 +229,7 @@ export default function DictionaryPopup({
                     </span>
                     {s.via && (
                       <div className="text-xs text-amber-700 dark:text-amber-400">
-                        ความหมายใกล้เคียง: Cambridge ใช้คำว่า <span className="font-zh">{s.via}</span> ซึ่งมีความหมาย “{m.query}” เหมือนกัน
+                        ความหมายใกล้เคียง: Cambridge แปลว่า <span className="font-zh">{s.via}</span> ซึ่งความหมายใน CC-CEDICT ตรงกับ <span className="font-zh">{target.text}</span>
                       </div>
                     )}
                     {s.examples.map((ex, xi) => (

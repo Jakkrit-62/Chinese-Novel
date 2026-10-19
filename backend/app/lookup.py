@@ -24,13 +24,15 @@ async def lookup_word(word: str, pinyin: list[str], context: str | None) -> dict
             info["cambridgeIdiom"] = await cambridge.lookup_english_idiom(phrase) if phrase else None
             return info
         best = info["senses"][0]["score"] if info["senses"] else 0
+        top = [s for s in info["senses"] if s["score"] >= best - TOP_TIER]
+        meaning = {h for s in top for h in english_headwords(s["gloss"])}
         queries: list[tuple[str, str]] = []
-        for sense in (s for s in info["senses"] if s["score"] >= best - TOP_TIER):
+        for sense in top:
             for headword in english_headwords(sense["gloss"]):
                 if all(q[0] != headword for q in queries):
                     queries.append((headword, sense["gloss"]))
         for headword, gloss in queries[:MAX_QUERIES]:
-            info["cambridge"].append({**await cambridge.map_to_cambridge(word, headword, cedict()), "gloss": gloss})
+            info["cambridge"].append({**await cambridge.map_to_cambridge(word, headword, meaning, cedict()), "gloss": gloss})
         info["cambridge"].sort(key=lambda m: -(m["matched"][0]["match"] if m["matched"] else -1))
     except httpx.HTTPError as exc:
         info["error"] = str(exc)

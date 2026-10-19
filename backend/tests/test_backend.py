@@ -101,11 +101,37 @@ def _sense(definition, translation):
     return {"guideword": "", "pos": "verb", "definition": definition, "translation": translation, "examples": []}
 
 
-def test_synonym_back_match_only_when_no_exact_match():
-    understand = [_sense("to know the meaning of something", "理解，懂，明白"), _sense("to have heard", "获悉，听说")]
-    kept = score_senses("了解", "understand", understand, cedict())
+def test_synonym_back_match_needs_shared_meaning():
+    meaning = {"understand", "realize", "find out"}  # 了解's glosses as English headwords
+    understand = [_sense("to know the meaning of something", "理解，明白，懂得"), _sense("to have heard", "获悉，听说")]
+    kept = score_senses("了解", understand, meaning, cedict())
     assert [s["definition"] for s in kept] == ["to know the meaning of something"]
-    assert kept[0]["via"] in ("理解", "懂", "明白") and kept[0]["match"] == 0.6
+    assert kept[0]["via"] in ("理解", "明白", "懂得") and kept[0]["match"] == 0.6
+    # every sense shares one meaning -> kept, as weaker evidence
+    find_out = [_sense("to get information about something", "找出，查明；得知")]
+    assert score_senses("了解", find_out, meaning, cedict())[0]["match"] == 0.55
+    # "realize" in the sense of achieve -> 实现 shares only the ambiguous English word
+    realize = [_sense("to understand a situation", "明白；认识到；意识到"), _sense("to achieve something", "实现")]
+    assert [s["definition"] for s in score_senses("了解", realize, meaning, cedict())] == ["to understand a situation"]
     # 岸 does mean "bank", but an exact 银行 sense exists, so the river sense must not sneak in
     bank = [_sense("an organization for money", "银行"), _sense("land beside a river", "岸，堤")]
-    assert [s["translation"] for s in score_senses("银行", "bank", bank, cedict())] == ["银行"]
+    assert [s["translation"] for s in score_senses("银行", bank, {"bank"}, cedict())] == ["银行"]
+
+
+IDIOM_FIXTURE = """<div class="idiom-block"><div class="pr dsense"><div class="def-block ddef_block">
+<div class="ddef_h"><div class="def ddef_d db">to succeed in achieving two things in a single action</div></div>
+</div></div></div>"""
+
+
+def test_idiom_page_without_entry_body_is_found(monkeypatch):
+    class Resp:
+        status_code, text, headers = 200, IDIOM_FIXTURE, {}
+
+    class Client:
+        async def get(self, url, headers):
+            return Resp()
+
+    monkeypatch.setattr(cambridge, "_get_client", lambda: Client())
+    monkeypatch.setattr(cambridge, "MIN_INTERVAL", 0)
+    result = asyncio.run(cambridge.lookup_english_idiom("kill two birds with one stone"))
+    assert result["definitions"] == ["to succeed in achieving two things in a single action"]
