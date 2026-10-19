@@ -3,12 +3,15 @@
   "version": "1.0.0",
   "scripts": {
     "copy-wasm": "node -e \"require('fs').copyFileSync('node_modules/jieba-wasm/pkg/web/jieba_rs_wasm_bg.wasm','public/jieba_rs_wasm_bg.wasm')\"",
-    "postinstall": "npm run copy-wasm",
+    "postinstall": "npm run copy-wasm && npm run copy-data",
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "android:sync": "next build && cap sync android",
-    "android:apk": "next build && cap sync android && cd android && ./gradlew assembleDebug"
+    "android:apk": "next build && cap sync android && cd android && ./gradlew assembleDebug",
+    "copy-data": "node -e \"for (const f of require('fs').readdirSync('../data')) require('fs').copyFileSync('../data/'+f,'public/'+f)\"",
+    "prebuild": "npm run copy-data",
+    "test": "tsx --test src/lib/*.test.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",
@@ -24,8 +27,10 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
+    "happy-dom": "^21.0.3",
     "postcss": "^8.5.31",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   },
   "private": true

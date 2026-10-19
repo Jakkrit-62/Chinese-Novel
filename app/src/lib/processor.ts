@@ -1,5 +1,6 @@
 import initJieba, { add_word, cut } from "jieba-wasm/web";
 import { pinyin } from "pinyin-pro";
+import { loadPhrases } from "./dict";
 import { estimateLevel, loadHsk } from "./hsk";
 import type { Sentence, Token } from "./types";
 
@@ -9,12 +10,16 @@ const SENTENCE = /[^。！？!?…\n]*(?:[。！？!?…]+[”」』）)"']*|\n|
 
 let ready: Promise<void> | null = null;
 
-/** Load the jieba WASM module and teach it every HSK word so study words are never split. */
+/** Load the jieba WASM module and teach it every HSK word and idiom so they are never split. */
 function init(): Promise<void> {
   ready ??= (async () => {
-    await initJieba({ module_or_path: "/jieba_rs_wasm_bg.wasm" });
-    const hsk = await loadHsk();
+    const [, hsk, phrases] = await Promise.all([
+      initJieba({ module_or_path: "/jieba_rs_wasm_bg.wasm" }),
+      loadHsk(),
+      loadPhrases(),
+    ]);
     for (const word of Object.keys(hsk)) if (word.length > 1) add_word(word);
+    for (const phrase of phrases) add_word(phrase);
   })();
   return ready;
 }

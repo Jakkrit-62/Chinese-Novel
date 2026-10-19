@@ -6,12 +6,12 @@ import os
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from . import cambridge
-from .hsk import hsk_entry
+from .lookup import lookup_word
 from .text_processing import _init_jieba, process_text
 from .translate import translate
 
@@ -48,15 +48,16 @@ def process(req: ProcessRequest):
     return {"sentences": process_text(req.text)}
 
 
-@app.get("/api/dictionary/{word}")
-async def dictionary(word: str):
-    try:
-        result = await cambridge.lookup(word)
-    except httpx.HTTPError as exc:
-        result = {"word": word, "found": False, "entries": [], "error": str(exc)}
-    # Always include the bundled CC-CEDICT/HSK gloss so the popup is never empty.
-    result["hsk"] = hsk_entry(word)
-    return result
+@app.get("/api/word/{word}")
+async def word_info(word: str, pinyin: str = "", sentence: str = Query("", max_length=2000)):
+    """Meanings of `word` as used in `sentence` (same shape as the app's WordInfo)."""
+    context = None
+    if sentence.strip():
+        try:
+            context = (await translate(sentence.strip()))["translation"]
+        except (httpx.HTTPError, KeyError):
+            pass  # rank without context rather than fail the lookup
+    return await lookup_word(word, pinyin.split(), context)
 
 
 @app.post("/api/translate")

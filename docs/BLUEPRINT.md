@@ -3,43 +3,67 @@
 ## 1. System architecture & data flow
 
 ```
- raw text ──► sentence splitter ──► jieba segmentation ──► pinyin (sentence context) ──► HSK tagging ──► Sentence[]
- (paste)      (。！？… + closing     (HSK words added to      pypinyin / pinyin-pro       hsk.json lookup,       │
-              quotes, newlines)      jieba's dictionary)                                compound estimate     ▼
-                                                                                                  InteractiveReader
- tap word ──► DictionaryPopup ──► bundled CC-CEDICT gloss (instant) + Cambridge scraper (cached)        │
- long-press / "แปลทั้งประโยค" ──► SentenceTranslation ──► MyMemory (or LibreTranslate via backend) ◄──────┘
+ raw text ──► sentence splitter ──► jieba (+ HSK words + 32k idioms) ──► pinyin (sentence context) ──► HSK tag
+                                                                                                        │
+ tap a word ──► WordInfo pipeline (below) ──► DictionaryPopup                          InteractiveReader ◄┘
+ long-press ──► sentence translation (MyMemory / LibreTranslate)
 ```
 
-Two interchangeable engines behind `app/src/lib/api.ts`:
+### Why Cambridge can't be queried with Chinese directly
 
-| Step | On device (default, offline except lookups) | FastAPI backend (`backend/`) |
+Cambridge's bilingual dictionaries are indexed by **English** headwords (English → Chinese). A Chinese
+word therefore has to be bridged to English first, and the English result has to be checked so we
+don't show a sense of the English word that has nothing to do with the Chinese one
+(银行 → "bank" → "bank of a river" is wrong).
+
+### Word lookup pipeline (`app/src/lib/meaning.ts` ⇄ `backend/app/meaning.py`)
+
+1. **zh → en bridge: CC-CEDICT** (120k entries, bundled). Every gloss of the word is a candidate.
+2. **Rank glosses for this occurrence**
+   * *reading*: the context pinyin of the token picks the right entry of a polyphone (行 háng = row/firm, xíng = walk/OK);
+   * *context*: the sentence is machine-translated once (cached) and glosses sharing content words with
+     that translation are boosted (加油 in "make an extra effort" vs "refuel the car"; 打 "hit" vs "phone call");
+   * bound-form / literary / variant / surname glosses are demoted.
+3. **Glosses → English headwords**: "to cheer sb on" → `cheer on`, "row; line" → `row`, `line`. Long
+   explanatory glosses produce no query. Only senses within 0.5 of the best score are used, so an
+   off-context sense never reaches Cambridge.
+4. **Cambridge back-mapping**: look up `/dictionary/english-chinese-simplified/{headword}` and score every
+   sense by whether *Cambridge's own Chinese translation* maps back to the original word
+   (exact = 1, contains = 0.9, partial character overlap ≤ 0.5). Only senses ≥ 0.5 are shown, with their
+   guideword, English definition, Chinese translation and examples. If none match, the popup says so
+   instead of showing a misleading definition.
+5. **Idioms / set phrases (成语) take a different path** – word-by-word mapping is meaningless for them:
+   * CC-CEDICT's idiom glosses, split into *literal* ("draw legs on a snake") and *figurative* meaning;
+   * the **Xinhua idiom dictionary** (新华成语词典, 30k idioms) Chinese explanation (释义);
+   * if CC-CEDICT gives an English idiom equivalent (一石二鸟 → "kill two birds with one stone"), its
+     entry in the Cambridge *English* dictionary.
+   Idioms are added to jieba so they stay one token; if a phrase is still split, `findEnclosingPhrase`
+   detects the longer dictionary phrase around the tapped token and the popup offers it.
+
+| Source | Used for | Licence |
 |---|---|---|
-| Segmentation | `jieba-wasm` (jieba-rs) | `jieba` |
-| Pinyin | `pinyin-pro`, run on the **whole sentence** then sliced per token | `pypinyin` per word (phrase dictionary) |
-| HSK | `public/hsk.json` | `app/data/hsk.json` (same file) |
-| Cambridge | `CapacitorHttp` (native, no CORS) + `DOMParser` | `httpx` + BeautifulSoup |
-| Translation | MyMemory | MyMemory or self-hosted LibreTranslate |
+| CC-CEDICT (via `cedict-json`) | zh → en senses, classifiers, idiom lit./fig. | CC BY-SA 4.0 |
+| Xinhua idiom dictionary (`pwxcoo/chinese-xinhua`) | idiom detection + Chinese explanation | MIT |
+| HSK 2.0 lists (`drkameleon/complete-hsk-vocabulary`) | levels, colour coding | MIT |
+| Cambridge English-Chinese / English | verified definitions + examples, fetched live per tap | site terms; not redistributed |
+| MyMemory (or LibreTranslate) | sentence translation and ranking context | API terms |
 
-**Token model** – `{ text, pinyin: string[] (one per character), hsk: 1-6 | null, hskEstimated, isHan }`.
-Pinyin is per character so the reader renders `<ruby>银<rt>yín</rt>行<rt>háng</rt></ruby>`, keeping
-every syllable exactly above its hanzi even in long words.
+### Token model & HSK
 
-**HSK tagging** – exact lookup first. jieba often keeps compounds the HSK list doesn't contain
-(一个, 回家吧); those are split greedily into HSK words and get the hardest piece's level, flagged
-`hskEstimated` (popup shows "≈ HSK 2"). Anything still unmatched is "outside HSK" (treated as level 7).
-
-**HSK filter** – `shouldShowPinyin()` in `HskFilter.tsx`: `all`, `none`, or `above` (show pinyin
-only when level > threshold; threshold 0 = all words). Colour-coding is independent.
+`{ text, pinyin: string[] (per character), hsk: 1-6 | null, hskEstimated, isHan }`. Pinyin is per
+character so `<ruby>` keeps each syllable above its hanzi. Unlisted compounds (一个, 回家吧) get the
+hardest level among their HSK sub-words, flagged `≈`. The HSK filter shows pinyin for all words, none,
+or only words above a chosen level; colour coding is independent.
 
 ## 2. Backend (`backend/app`)
 
 * `text_processing.py` – `POST /api/process {text}` → `{sentences:[{text,tokens}]}`.
-* `cambridge.py` – `GET /api/dictionary/{word}`. Tries `/dictionary/chinese-english/{w}` then
-  `/dictionary/chinese-simplified-english/{w}`. Browser-like headers, rotating UA, concurrency 2,
-  ≥0.5 s between upstream calls, retry with backoff honouring `Retry-After` on 403/429/5xx,
-  24 h in-memory TTL cache. Parser uses both current (`ddef_d`, `dpos`, `deg`) and legacy class
-  names. The response always includes the bundled HSK/CC-CEDICT gloss so the popup is never empty.
+* `GET /api/word/{word}?pinyin=…&sentence=…` – the full pipeline above (`meaning.py`, `lookup.py`),
+  returning the same `WordInfo` JSON the app builds on device.
+* `cambridge.py` – English-Chinese lookups + back-matching, English idiom lookups. Browser-like headers,
+  rotating UA, concurrency 2, ≥0.5 s between upstream calls, backoff honouring `Retry-After` on
+  403/429/5xx, 24 h TTL cache of parsed results. Selectors cover current (`ddef_d`, `dsense_gw`, `dtrans`)
+  and older class names. `python -m app.smoke` checks the live site (run in CI).
 * `translate.py` – `POST /api/translate {text}`.
 * CORS: `CORS_ORIGINS` env var, defaults include `https://localhost` and `capacitor://localhost`
   (the Capacitor WebView origins) and `http://localhost:3000` (dev server).
@@ -47,9 +71,9 @@ only when level > threshold; threshold 0 = all words). Colour-coding is independ
 ## 3. Frontend (`app/src`)
 
 * `components/InteractiveReader.tsx` – memoised `Word` components; tap = dictionary, long-press = sentence translation.
-* `components/DictionaryPopup.tsx` – bottom sheet: word, context pinyin, HSK badge, offline gloss, Cambridge entries & examples, "translate sentence".
+* `components/DictionaryPopup.tsx` – bottom sheet: meaning in this sentence (with the reason it was chosen), idiom panel, back-matched Cambridge senses, other senses, enclosing-phrase chip, "translate sentence".
 * `components/HskFilter.tsx` – pinyin mode, threshold slider, colour toggle, font size, backend URL.
-* `lib/processor.ts`, `lib/cambridge.ts`, `lib/http.ts` – on-device pipeline.
+* `lib/processor.ts`, `lib/meaning.ts`, `lib/lookup.ts`, `lib/cambridge.ts`, `lib/http.ts` – on-device pipeline.
 
 ## 4. Edge cases & limitations
 
@@ -57,8 +81,10 @@ only when level > threshold; threshold 0 = all words). Colour-coding is independ
 |---|---|
 | **Polyphones** (行 xíng/háng, 长 cháng/zhǎng, 了 le/liǎo, 一/不 tone sandhi) | Pinyin is computed with context (whole sentence on device; whole word with pypinyin's phrase dictionary on the backend). Rare literary readings can still be wrong; the popup also shows the dictionary reading. |
 | **Segmentation errors** (names, web-novel slang, 修仙 terms) | All HSK words are added to jieba's dictionary. Character names are often split; future work: user dictionary (`add_word`) from long-press. |
-| **Cambridge has no API / may block** | Server-side or native requests only, throttle + cache + backoff. If blocked or the word is missing, the bundled CC-CEDICT gloss still shows and "เปิดหน้าเว็บ" opens the real page. HTML redesigns are handled by fallback selectors; update both parsers (`cambridge.py` / `cambridge.ts`) together. |
-| **Cambridge coverage** | Its Chinese-English dictionary is smaller than CC-CEDICT; idioms and novel vocabulary are often absent ("ไม่พบคำนี้"). |
+| **Cambridge has no API / may block** | Native or server-side requests only, throttle + cache + backoff. When blocked, CC-CEDICT still answers. HTML redesigns: fallback selectors + the CI smoke test; update both parsers together (shared fixture tests). |
+| **zh → en → Cambridge drifts in meaning** | Back-mapping through Cambridge's own Chinese translation; senses that don't map back are hidden, not guessed. |
+| **Context ranking depends on machine translation** | MT is only a ranking signal; the displayed meaning is always a dictionary gloss. Without MT, ranking falls back to reading + dictionary order. |
+| **Web-novel slang, names, 修仙 terms** | Often missing from every source; the popup says so and offers sentence translation. |
 | **Terms of use** | Lookups are per user tap and cached; nothing is redistributed. Don't bulk-crawl. |
 | **Translation quota** | MyMemory's free tier is ~5k chars/day per IP; set `MYMEMORY_EMAIL` or switch the backend to LibreTranslate. |
 | **Traditional characters** | HSK list is simplified; traditional text segments and gets pinyin but mostly shows as "outside HSK". |

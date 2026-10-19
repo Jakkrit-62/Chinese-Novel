@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 import jieba
 from pypinyin import Style, pinyin
 
+from .data import phrases
 from .hsk import estimate_level, hsk_level, hsk_table
 
 HAN_RE = re.compile(r"[㐀-䶿一-鿿豈-﫿\U00020000-\U0002ebef]")
@@ -15,13 +16,15 @@ _initialised = False
 
 
 def _init_jieba() -> None:
-    """Teach jieba every HSK word so it never splits a word the learner is studying."""
+    """Teach jieba every HSK word and idiom so it never splits them."""
     global _initialised
     if _initialised:
         return
     for word in hsk_table():
         if len(word) > 1:
             jieba.add_word(word)
+    for phrase in phrases():
+        jieba.add_word(phrase)
     _initialised = True
 
 

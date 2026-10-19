@@ -4,3 +4,7 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 public/jieba_rs_wasm_bg.wasm
+public/hsk.json
+public/cedict.json
+public/idioms.json
+public/phrases.txt

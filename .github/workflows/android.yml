@@ -27,6 +27,10 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
       - run: python -m pytest -q
+      # The real site can change its markup or block CI IPs: report, don't fail the build.
+      - name: Live Cambridge smoke test
+        continue-on-error: true
+        run: python -m app.smoke
 
   apk:
     runs-on: ubuntu-24.04
@@ -56,6 +60,7 @@ jobs:
         run: |
           npm ci
           npx tsc --noEmit
+          npm test
           npm run build
 
       - name: Copy web assets into the Android project

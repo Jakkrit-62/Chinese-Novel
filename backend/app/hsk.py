@@ -1,14 +1,5 @@
 """HSK 1-6 lookup table (word -> level, pinyin, short CC-CEDICT meanings)."""
-import json
-from functools import lru_cache
-from pathlib import Path
-
-DATA_FILE = Path(__file__).parent / "data" / "hsk.json"
-
-
-@lru_cache(maxsize=1)
-def hsk_table() -> dict[str, dict]:
-    return json.loads(DATA_FILE.read_text(encoding="utf-8"))
+from .data import hsk_table
 
 
 def hsk_level(word: str) -> int | None:

@@ -8,6 +8,7 @@ const LONG_PRESS_MS = 450;
 export interface WordSelection {
   token: Token;
   sentenceIndex: number;
+  tokenIndex: number;
 }
 
 /** One word: each character gets its own <rt> so pinyin sits exactly above its hanzi. */
@@ -103,7 +104,7 @@ export default function InteractiveReader({
                 token={token}
                 settings={settings}
                 active={selected?.sentenceIndex === si && selected.token === token}
-                onTap={() => onSelectWord({ token, sentenceIndex: si })}
+                onTap={() => onSelectWord({ token, sentenceIndex: si, tokenIndex: ti })}
                 onLongPress={() => onSelectSentence(si)}
               />
             ))}

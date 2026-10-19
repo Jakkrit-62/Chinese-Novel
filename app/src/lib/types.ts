@@ -20,24 +20,63 @@ export interface HskEntry {
   m: string[];
 }
 
-export interface CambridgeSense {
-  definition: string;
-  translation: string;
-  examples: { zh: string; en: string }[];
-}
-
-export interface CambridgeEntry {
-  headword: string;
+/** One English gloss from CC-CEDICT, scored for the current context. */
+export interface RankedSense {
   pinyin: string;
-  pos: string[];
-  senses: CambridgeSense[];
+  gloss: string;
+  classifiers: string[];
+  score: number;
+  /** Why it ranked where it did, e.g. ["pinyin", "context:bank"]. */
+  reasons: string[];
 }
 
-export interface DictionaryResult {
-  word: string;
+export interface IdiomInfo {
+  pinyin: string;
+  /** Chinese explanation (释义) from the Xinhua idiom dictionary. */
+  explanation: string | null;
+  /** CC-CEDICT "lit. ...; fig. ..." split into its two halves when present. */
+  literal: string | null;
+  figurative: string | null;
+  english: string[];
+}
+
+export interface CambridgeSense {
+  guideword: string;
+  pos: string;
+  definition: string;
+  /** Cambridge's own Chinese translation of this English sense. */
+  translation: string;
+  examples: { en: string; zh: string }[];
+  /** 0-1: how well `translation` maps back to the Chinese word we started from. */
+  match: number;
+}
+
+/** Result of looking up one English headword in Cambridge English-Chinese (Simplified). */
+export interface CambridgeMapping {
+  query: string;
+  /** The CC-CEDICT gloss the English query came from. */
+  gloss?: string;
+  url: string;
   found: boolean;
-  entries: CambridgeEntry[];
-  source_url?: string;
+  /** Senses whose Chinese translation matches the original word, best first. */
+  matched: CambridgeSense[];
+  unmatchedCount: number;
+}
+
+export interface CambridgeIdiom {
+  phrase: string;
+  url: string;
+  definitions: string[];
+}
+
+export interface WordInfo {
+  word: string;
+  senses: RankedSense[];
+  idiom: IdiomInfo | null;
+  cambridge: CambridgeMapping[];
+  cambridgeIdiom: CambridgeIdiom | null;
+  /** Sentence translation that was used to rank senses (null if unavailable). */
+  context: string | null;
   error?: string;
 }
 

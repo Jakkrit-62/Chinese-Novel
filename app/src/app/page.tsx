@@ -93,9 +93,11 @@ export default function Home() {
         </>
       )}
 
-      {selected && (
+      {selected && sentences && (
         <DictionaryPopup
-          token={selected.token}
+          key={`${selected.sentenceIndex}:${selected.tokenIndex}`}
+          sentence={sentences![selected.sentenceIndex]}
+          tokenIndex={selected.tokenIndex}
           backendUrl={settings.backendUrl}
           onClose={() => setSelected(null)}
           onTranslateSentence={() => {
