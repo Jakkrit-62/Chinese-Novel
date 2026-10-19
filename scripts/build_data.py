@@ -1,6 +1,6 @@
 """Build the dictionary data shared by the Android app and the FastAPI backend.
 
-Outputs (in /data, copied into app/public by `npm run copy-data`):
+Outputs (in /data, copied into app/public by `npm run copy-assets`):
   hsk.json      word -> {l: HSK level 1-6, p: pinyin, m: [short glosses]}
   cedict.json   word -> [[pinyin, [english glosses...], [classifiers...]], ...]   (full CC-CEDICT)
   idioms.json   word -> {p: pinyin, x: Chinese explanation}                      (Xinhua idiom dictionary)

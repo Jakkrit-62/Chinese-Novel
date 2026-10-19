@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { backMatch } from "./cambridge";
+import { backMatch, scoreSenses } from "./cambridge";
 import type { Cedict, Idioms } from "./dict";
 import { englishHeadwords, englishIdiomCandidate, findEnclosingPhrase, idiomInfo, rankSenses } from "./meaning";
 
@@ -50,4 +50,15 @@ test("a phrase split across tokens is found from any of its tokens", () => {
   const tokens = ["他", "这样", "做", "是", "一石", "二鸟", "。"];
   assert.deepEqual(findEnclosingPhrase(tokens, 5, cedict, idioms), { text: "一石二鸟", start: 4, end: 5 });
   assert.equal(findEnclosingPhrase(["我", "是", "学生"], 2, cedict, idioms)?.text ?? null, null);
+});
+
+const sense = (definition: string, translation: string) => ({ guideword: "", pos: "verb", definition, translation, examples: [] });
+
+test("synonym back-match is used only when no sense translates back exactly", () => {
+  const understand = [sense("to know the meaning of something", "理解，懂，明白"), sense("to have heard", "获悉，听说")];
+  const kept = scoreSenses("了解", "understand", understand, cedict);
+  assert.deepEqual(kept.map((s) => s.definition), ["to know the meaning of something"]);
+  assert.ok(["理解", "懂", "明白"].includes(kept[0].via!));
+  const bank = [sense("an organization for money", "银行"), sense("land beside a river", "岸，堤")];
+  assert.deepEqual(scoreSenses("银行", "bank", bank, cedict).map((s) => s.translation), ["银行"]);
 });

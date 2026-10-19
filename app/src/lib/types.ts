@@ -49,6 +49,8 @@ export interface CambridgeSense {
   examples: { en: string; zh: string }[];
   /** 0-1: how well `translation` maps back to the Chinese word we started from. */
   match: number;
+  /** Set when Cambridge used a synonym (e.g. 理解 for 了解) whose CC-CEDICT meaning matches. */
+  via: string | null;
 }
 
 /** Result of looking up one English headword in Cambridge English-Chinese (Simplified). */

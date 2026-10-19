@@ -216,8 +216,7 @@ export default function DictionaryPopup({
                 <a href={m.url} target="_blank" rel="noreferrer" className="font-semibold text-sky-600 underline">
                   {m.query}
                 </a>
-                {m.gloss && m.gloss !== m.query && <> (จาก “{m.gloss}”)</>} → ความหมายที่ Cambridge แปลกลับเป็น{" "}
-                <span className="font-zh">{target.text}</span>
+                {m.gloss && m.gloss !== m.query && <> (จาก “{m.gloss}”)</>} → ความหมายที่ตรงกับ <span className="font-zh">{target.text}</span>
               </p>
               <ol className="list-decimal space-y-2 pl-5 text-sm">
                 {m.matched.slice(0, 3).map((s, i) => (
@@ -228,6 +227,11 @@ export default function DictionaryPopup({
                     <span lang="zh-CN" className="font-zh ml-1 text-emerald-700 dark:text-emerald-400">
                       {s.translation}
                     </span>
+                    {s.via && (
+                      <div className="text-xs text-amber-700 dark:text-amber-400">
+                        ความหมายใกล้เคียง: Cambridge ใช้คำว่า <span className="font-zh">{s.via}</span> ซึ่งมีความหมาย “{m.query}” เหมือนกัน
+                      </div>
+                    )}
                     {s.examples.map((ex, xi) => (
                       <div key={xi} className="mt-1 border-l-2 border-zinc-200 pl-2 dark:border-zinc-700">
                         <div className="italic">{ex.en}</div>

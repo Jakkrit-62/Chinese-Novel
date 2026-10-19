@@ -30,7 +30,7 @@ async def lookup_word(word: str, pinyin: list[str], context: str | None) -> dict
                 if all(q[0] != headword for q in queries):
                     queries.append((headword, sense["gloss"]))
         for headword, gloss in queries[:MAX_QUERIES]:
-            info["cambridge"].append({**await cambridge.map_to_cambridge(word, headword), "gloss": gloss})
+            info["cambridge"].append({**await cambridge.map_to_cambridge(word, headword, cedict()), "gloss": gloss})
         info["cambridge"].sort(key=lambda m: -(m["matched"][0]["match"] if m["matched"] else -1))
     except httpx.HTTPError as exc:
         info["error"] = str(exc)

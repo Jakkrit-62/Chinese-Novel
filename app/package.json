@@ -2,16 +2,15 @@
   "name": "hanzi-reader",
   "version": "1.0.0",
   "scripts": {
-    "copy-wasm": "node -e \"require('fs').copyFileSync('node_modules/jieba-wasm/pkg/web/jieba_rs_wasm_bg.wasm','public/jieba_rs_wasm_bg.wasm')\"",
-    "postinstall": "npm run copy-wasm && npm run copy-data",
+    "postinstall": "npm run copy-assets",
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "android:sync": "next build && cap sync android",
     "android:apk": "next build && cap sync android && cd android && ./gradlew assembleDebug",
-    "copy-data": "node -e \"for (const f of require('fs').readdirSync('../data')) require('fs').copyFileSync('../data/'+f,'public/'+f)\"",
-    "prebuild": "npm run copy-data",
-    "test": "tsx --test src/lib/*.test.ts"
+    "prebuild": "npm run copy-assets",
+    "test": "tsx --test src/lib/*.test.ts",
+    "copy-assets": "node scripts/copy-assets.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",

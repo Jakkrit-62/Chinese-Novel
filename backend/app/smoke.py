@@ -8,6 +8,8 @@ import sys
 from . import cambridge
 from .lookup import lookup_word
 
+DIAGNOSE = ["https://dictionary.cambridge.org/dictionary/english/kill-two-birds-with-one-stone"]
+
 CASES = [("银行", ["yín", "háng"], None), ("了解", ["liǎo", "jiě"], None), ("一石二鸟", ["yī", "shí", "èr", "niǎo"], None)]
 
 
@@ -26,6 +28,14 @@ async def main() -> int:
         if info["cambridgeIdiom"]:
             parsed_any = True
             print("  idiom:", info["cambridgeIdiom"])
+    # Raw view of pages the parser couldn't read, to fix selectors from the CI log.
+    for url in DIAGNOSE:
+        resp = await cambridge._get_client().get(url, headers=cambridge._headers())
+        html = resp.text
+        print(f"\n--- {url}\n  status={resp.status_code} final={resp.url} entry-body={'entry-body' in html} "
+              f"def-block={'def-block' in html} idiom-block={'idiom-block' in html} parsed={len(cambridge.parse_senses(html))}")
+        i = html.find('class="def ')
+        print("  snippet:", " ".join(html[max(0, i - 600): i + 300].split())[:900] if i >= 0 else "(no def)")
     await cambridge.close_client()
     return 0 if parsed_any else 1
 

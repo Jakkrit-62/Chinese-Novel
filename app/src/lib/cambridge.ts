@@ -6,7 +6,9 @@
  *
  * Keep selectors and scoring in sync with backend/app/cambridge.py.
  */
+import type { Cedict } from "./dict";
 import { httpRequest } from "./http";
+import { englishHeadwords } from "./meaning";
 import type { CambridgeIdiom, CambridgeMapping, CambridgeSense } from "./types";
 
 const BASE = "https://dictionary.cambridge.org";
@@ -50,10 +52,47 @@ export function backMatch(word: string, translation: string): number {
   return chars.filter((c) => translation.includes(c)).length / chars.length / 2;
 }
 
+/**
+ * A Chinese word in Cambridge's translation whose own CC-CEDICT glosses contain `headword`
+ * (understand -> 理解 "to comprehend; to understand"): Cambridge means the same thing even
+ * though it chose a different Chinese word than ours.
+ */
+export function synonymVia(translation: string, headword: string, cedict: Cedict): string | null {
+  for (const alt of translation.replace(/[（(].*?[)）]/g, "").split(/[；;，,、\s]+/)) {
+    if (alt && (cedict[alt] ?? []).some((e) => e[1].some((g) => englishHeadwords(g).includes(headword)))) return alt;
+  }
+  return null;
+}
+
+/**
+ * Senses that map back to `word`, best first. Exact back-translations win; only if there are
+ * none do we accept senses translated by a synonym (prevents bank/岸 for 银行).
+ */
+export function scoreSenses(
+  word: string,
+  headword: string,
+  senses: Omit<CambridgeSense, "match" | "via">[],
+  cedict: Cedict,
+): CambridgeSense[] {
+  const scored = senses.map((s) => ({ ...s, match: backMatch(word, s.translation), via: null as string | null }));
+  let keep: CambridgeSense[];
+  if (scored.some((s) => s.match >= 0.9)) {
+    keep = scored.filter((s) => s.match >= 0.5);
+  } else {
+    keep = [];
+    for (const s of scored) {
+      const via = s.match < 0.5 ? synonymVia(s.translation, headword, cedict) : null;
+      if (via) keep.push({ ...s, match: 0.6, via });
+      else if (s.match >= 0.5) keep.push(s);
+    }
+  }
+  return keep.sort((a, b) => b.match - a.match);
+}
+
 /** Parse an English-Chinese (or monolingual English) entry page into senses. */
-export function parseSenses(html: string): { pos: string; senses: Omit<CambridgeSense, "match">[] } {
+export function parseSenses(html: string): { pos: string; senses: Omit<CambridgeSense, "match" | "via">[] } {
   const doc = new DOMParser().parseFromString(html, "text/html");
-  const senses: Omit<CambridgeSense, "match">[] = [];
+  const senses: Omit<CambridgeSense, "match" | "via">[] = [];
   let firstPos = "";
   for (const block of Array.from(doc.querySelectorAll("div.def-block, div.ddef_block"))) {
     const entry = block.closest(".entry-body__el, .pr.dictionary, .di-body");
@@ -127,13 +166,12 @@ async function fetchParsed(url: string): Promise<Parsed | null> {
   throw new Error("Cambridge is rate-limiting requests");
 }
 
-export async function mapToCambridge(word: string, headword: string): Promise<CambridgeMapping> {
+export async function mapToCambridge(word: string, headword: string, cedict: Cedict): Promise<CambridgeMapping> {
   const url = BASE + EN_ZH + slug(headword);
   const parsed = await fetchParsed(url);
   if (!parsed) return { query: headword, url, found: false, matched: [], unmatchedCount: 0 };
-  const senses = parsed.senses.map((s) => ({ ...s, match: backMatch(word, s.translation) }));
-  const matched = senses.filter((s) => s.match >= 0.5).sort((a, b) => b.match - a.match);
-  return { query: headword, url, found: true, matched, unmatchedCount: senses.length - matched.length };
+  const matched = scoreSenses(word, headword, parsed.senses, cedict);
+  return { query: headword, url, found: true, matched, unmatchedCount: parsed.senses.length - matched.length };
 }
 
 export async function lookupEnglishIdiom(phrase: string): Promise<CambridgeIdiom | null> {

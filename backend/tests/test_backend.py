@@ -3,7 +3,7 @@ import asyncio
 from fastapi.testclient import TestClient
 
 from app import cambridge
-from app.cambridge import back_match, parse_senses
+from app.cambridge import back_match, parse_senses, score_senses
 from app.data import cedict, idioms
 from app.hsk import estimate_level
 from app.lookup import lookup_word
@@ -95,3 +95,17 @@ def test_process_endpoint():
     with TestClient(app) as client:
         resp = client.post("/api/process", json={"text": "行不行？"})
         assert resp.status_code == 200 and resp.json()["sentences"][0]["tokens"]
+
+
+def _sense(definition, translation):
+    return {"guideword": "", "pos": "verb", "definition": definition, "translation": translation, "examples": []}
+
+
+def test_synonym_back_match_only_when_no_exact_match():
+    understand = [_sense("to know the meaning of something", "理解，懂，明白"), _sense("to have heard", "获悉，听说")]
+    kept = score_senses("了解", "understand", understand, cedict())
+    assert [s["definition"] for s in kept] == ["to know the meaning of something"]
+    assert kept[0]["via"] in ("理解", "懂", "明白") and kept[0]["match"] == 0.6
+    # 岸 does mean "bank", but an exact 银行 sense exists, so the river sense must not sneak in
+    bank = [_sense("an organization for money", "银行"), _sense("land beside a river", "岸，堤")]
+    assert [s["translation"] for s in score_senses("银行", "bank", bank, cedict())] == ["银行"]

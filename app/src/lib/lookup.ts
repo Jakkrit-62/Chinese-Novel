@@ -23,6 +23,7 @@ export async function resolveLocal(word: string, pinyin: string[], context: stri
 
 /** Adds Cambridge data to a resolved word: English idiom page for 成语, back-mapped senses otherwise. */
 export async function withCambridge(info: WordInfo): Promise<WordInfo> {
+  const cedict = await loadCedict();
   if (info.idiom) {
     const phrase = englishIdiomCandidate(info.idiom);
     return { ...info, cambridgeIdiom: phrase ? await lookupEnglishIdiom(phrase) : null };
@@ -37,7 +38,7 @@ export async function withCambridge(info: WordInfo): Promise<WordInfo> {
   }
   const cambridge = [];
   for (const q of queries.slice(0, MAX_QUERIES)) {
-    cambridge.push({ ...(await mapToCambridge(info.word, q.headword)), gloss: q.gloss });
+    cambridge.push({ ...(await mapToCambridge(info.word, q.headword, cedict)), gloss: q.gloss });
   }
   // Most useful first: mappings with back-matched senses, by best match.
   cambridge.sort((a, b) => (b.matched[0]?.match ?? -1) - (a.matched[0]?.match ?? -1));
